@@ -1,0 +1,220 @@
+{
+  "info": {
+    "name": "Inventory Reservation System",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "reservationId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Status",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/inventory/status"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const d = pm.response.json().data;",
+              "pm.test('shape', () => { pm.expect(d).to.have.all.keys('totalStock','soldStock','reservedStock','availableStock'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reserve (happy path)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"userId\": \"user-1\"\n}" },
+        "url": "{{baseUrl}}/inventory/reserve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "const r = pm.response.json();",
+              "pm.test('ACTIVE', () => pm.expect(r.data.status).to.eql('ACTIVE'));",
+              "pm.collectionVariables.set('reservationId', r.data.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reserve (out of stock -> 409)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"userId\": \"user-2\"\n}" },
+        "url": "{{baseUrl}}/inventory/reserve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('409 when stock exhausted', () => pm.response.to.have.status(409));",
+              "pm.test('code', () => pm.expect(pm.response.json().error.code).to.eql('INVENTORY_OUT_OF_STOCK'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reserve (validation: short userId -> 400)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"userId\": \"ab\"\n}" },
+        "url": "{{baseUrl}}/inventory/reserve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('400', () => pm.response.to.have.status(400));",
+              "pm.test('code', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reserve (validation: empty body -> 400)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{}" },
+        "url": "{{baseUrl}}/inventory/reserve"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('400', () => pm.response.to.have.status(400));"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Confirm (happy path)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/inventory/confirm/{{reservationId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "pm.test('CONFIRMED', () => pm.expect(pm.response.json().data.status).to.eql('CONFIRMED'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Confirm again (-> 409)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/inventory/confirm/{{reservationId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('409', () => pm.response.to.have.status(409));",
+              "pm.test('code', () => pm.expect(pm.response.json().error.code).to.eql('INVALID_RESERVATION_STATE'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cancel after confirm (-> error)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/inventory/cancel/{{reservationId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('not 200', () => pm.expect(pm.response.code).to.be.oneOf([409, 500]));"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Confirm (non-existent id -> 404)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/inventory/confirm/123e4567-e89b-12d3-a456-426614174000"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('404', () => pm.response.to.have.status(404));",
+              "pm.test('code', () => pm.expect(pm.response.json().error.code).to.eql('RESERVATION_NOT_FOUND'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Confirm (malformed id -> 400)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/inventory/confirm/not-a-uuid"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('400', () => pm.response.to.have.status(400));"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cancel (non-existent id)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/inventory/cancel/123e4567-e89b-12d3-a456-426614174000"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('error status', () => pm.expect(pm.response.code).to.be.oneOf([404, 500]));"]
+          }
+        }
+      ]
+    }
+  ]
+}
